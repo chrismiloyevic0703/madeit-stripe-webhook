@@ -1,0 +1,19 @@
+{
+  "name": "madiet-api",
+  "version": "1.0.0",
+  "description": "API for Stripe → Klaviyo membership plan syncing",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0",
+    "stripe": "^16.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
