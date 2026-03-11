@@ -8,12 +8,12 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16'
 });
 
-// Map Stripe price IDs to human-readable plan names.
-// Replace these placeholder IDs with your real Stripe price IDs.
+// Map Stripe product IDs to human-readable plan names.
+// These are your product IDs from Stripe.
 const PLAN_MAP = {
-  // 'price_starter_xxx': 'Starter',
-  // 'price_business_xxx': 'Business',
-  // 'price_growth_xxx': 'Growth'
+  prod_QitoWsRWrfLg0e: 'Starter',
+  prod_Qitrfh0Q6QSIoC: 'Business',
+  prod_TWPbyx7qGRLd6J: 'Growth'
 };
 
 // Stripe sends signed webhooks; we must verify signature using raw body.
@@ -41,8 +41,9 @@ router.post(
         case 'customer.subscription.updated': {
           const subscription = event.data.object;
 
-          const priceId = subscription.items.data[0]?.price?.id;
-          const planName = PLAN_MAP[priceId] || 'Unknown';
+          const firstItem = subscription.items.data[0];
+          const productId = firstItem?.price?.product;
+          const planName = PLAN_MAP[productId] || 'Unknown';
 
           const customerId = subscription.customer;
           const customer = await stripe.customers.retrieve(customerId);
