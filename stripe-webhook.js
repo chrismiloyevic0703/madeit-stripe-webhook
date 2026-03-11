@@ -24,15 +24,27 @@ router.post(
     const sig = req.headers['stripe-signature'];
 
     let event;
-    try {
-      event = stripe.webhooks.constructEvent(
-        req.body,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      console.error('Stripe webhook signature verification failed:', err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+
+    if (process.env.DISABLE_STRIPE_SIGNATURE === '1') {
+      // In test mode, skip Stripe signature verification and trust the raw payload.
+      try {
+        event = JSON.parse(req.body.toString());
+      } catch (err) {
+        console.error('Failed to parse webhook body:', err.message);
+        return res.status(400).send('Invalid JSON');
+      }
+    } else {
+      // In live mode, strictly verify the Stripe signature.
+      try {
+        event = stripe.webhooks.constructEvent(
+          req.body,
+          sig,
+          process.env.STRIPE_WEBHOOK_SECRET
+        );
+      } catch (err) {
+        console.error('Stripe webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+      }
     }
 
     try {
