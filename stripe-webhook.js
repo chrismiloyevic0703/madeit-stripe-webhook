@@ -142,29 +142,43 @@ async function updateKlaviyoProfile({
     return;
   }
 
-  await axios.post(
-    'https://a.klaviyo.com/api/profiles/',
-    {
-      data: {
-        type: 'profile',
-        attributes: {
-          email,
-          properties: {
-            membership_plan: membershipPlan,
-            stripe_customer_id: stripeCustomerId,
-            stripe_subscription_id: stripeSubscriptionId
+  try {
+    const response = await axios.post(
+      'https://a.klaviyo.com/api/profile-import',
+      {
+        data: {
+          type: 'profile',
+          attributes: {
+            email,
+            properties: {
+              membership_plan: membershipPlan,
+              stripe_customer_id: stripeCustomerId,
+              stripe_subscription_id: stripeSubscriptionId
+            }
           }
         }
+      },
+      {
+        headers: {
+          Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        }
       }
-    },
-    {
-      headers: {
-        Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      }
-    }
-  );
+    );
+
+    console.log(
+      'Klaviyo profile import response:',
+      response.status,
+      response.statusText
+    );
+  } catch (err) {
+    console.error(
+      'Klaviyo profile import failed:',
+      err.response?.status,
+      err.response?.data || err.message
+    );
+  }
 }
 
 module.exports = router;
