@@ -58,20 +58,30 @@ router.post(
           const planName = PLAN_MAP[productId] || 'Unknown';
 
           const customerId = subscription.customer;
-          const customer = await stripe.customers.retrieve(customerId);
-          const email = customer.email;
 
-          if (!email) {
-            console.warn('No email found for Stripe customer', customerId);
-            break;
+          try {
+            const customer = await stripe.customers.retrieve(customerId);
+            const email = customer.email;
+
+            if (!email) {
+              console.warn('No email found for Stripe customer', customerId);
+              break;
+            }
+
+            try {
+              await updateKlaviyoProfile({
+                email,
+                membershipPlan: planName,
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: subscription.id
+              });
+            } catch (err) {
+              console.error('Failed to update Klaviyo profile:', err.message || err);
+              // Do not fail the webhook; Stripe just needs a 2xx.
+            }
+          } catch (err) {
+            console.error('Failed to retrieve Stripe customer:', err.message || err);
           }
-
-          await updateKlaviyoProfile({
-            email,
-            membershipPlan: planName,
-            stripeCustomerId: customerId,
-            stripeSubscriptionId: subscription.id
-          });
 
           break;
         }
@@ -79,20 +89,30 @@ router.post(
         case 'customer.subscription.deleted': {
           const subscription = event.data.object;
           const customerId = subscription.customer;
-          const customer = await stripe.customers.retrieve(customerId);
-          const email = customer.email;
 
-          if (!email) {
-            console.warn('No email found for Stripe customer', customerId);
-            break;
+          try {
+            const customer = await stripe.customers.retrieve(customerId);
+            const email = customer.email;
+
+            if (!email) {
+              console.warn('No email found for Stripe customer', customerId);
+              break;
+            }
+
+            try {
+              await updateKlaviyoProfile({
+                email,
+                membershipPlan: 'None',
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: subscription.id
+              });
+            } catch (err) {
+              console.error('Failed to update Klaviyo profile (delete):', err.message || err);
+              // Do not fail the webhook.
+            }
+          } catch (err) {
+            console.error('Failed to retrieve Stripe customer (delete):', err.message || err);
           }
-
-          await updateKlaviyoProfile({
-            email,
-            membershipPlan: 'None',
-            stripeCustomerId: customerId,
-            stripeSubscriptionId: subscription.id
-          });
 
           break;
         }
