@@ -11,9 +11,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 // Map Stripe product IDs to human-readable plan names.
 // These are your product IDs from Stripe.
 const PLAN_MAP = {
-  prod_QitoWsRWrfLg0e: 'Starter',
+  prod_QitoWsRWrfLg0e: 'Starter',      // live Starter
   prod_Qitrfh0Q6QSIoC: 'Business',
-  prod_TWPbyx7qGRLd6J: 'Growth'
+  prod_TWPbyx7qGRLd6J: 'Growth',
+  prod_RDrvtkbbuceOBB: 'Starter'       // TEST Starter package
 };
 
 // Stripe sends signed webhooks; we must verify signature using raw body.
