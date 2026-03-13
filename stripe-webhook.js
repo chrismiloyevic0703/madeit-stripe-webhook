@@ -162,7 +162,8 @@ async function updateKlaviyoProfile({
         headers: {
           Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
           'Content-Type': 'application/json',
-          Accept: 'application/json'
+          Accept: 'application/json',
+          revision: '2024-02-15'
         }
       }
     );
@@ -173,10 +174,12 @@ async function updateKlaviyoProfile({
       response.statusText
     );
   } catch (err) {
+    const status = err.response?.status;
+    const body = err.response?.data;
     console.error(
       'Klaviyo profile import failed:',
-      err.response?.status,
-      err.response?.data || err.message
+      status,
+      body ? JSON.stringify(body) : err.message
     );
   }
 }
