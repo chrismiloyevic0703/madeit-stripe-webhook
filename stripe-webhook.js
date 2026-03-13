@@ -14,7 +14,7 @@ const PLAN_MAP = {
   prod_QitoWsRWrfLg0e: 'Starter',      // live Starter
   prod_Qitrfh0Q6QSIoC: 'Business',
   prod_TWPbyx7qGRLd6J: 'Growth',
-  prod_RDrvtkbbuceOBB: 'Starter'       // TEST Starter package
+  prod_RDrvtkbbuceOBB: 'Starter',       // TEST Starter package
   prod_RDrvOrlcGKv17S: 'Business'     // TEST Business package
 };
 
