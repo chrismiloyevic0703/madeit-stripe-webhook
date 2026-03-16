@@ -8,16 +8,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16'
 });
 
-// Map Stripe product IDs to plan names (must match Klaviyo segments: Hobby, Business, Maker, The Growth Circle 🚀).
-// Add live + test product IDs for each plan as needed.
+// Stripe product ID → plan name (must match Klaviyo segment values).
+// Add test product IDs (prod_...) here when testing in Stripe test mode.
 const PLAN_MAP = {
-  prod_U4tCikdA2Kr75c: 'Maker',           // live
-  // Hobby (entry tier)
-  prod_TnLttAZD9UmMxf: 'Hobby',           // live
-  // Business
-  prod_Qitrfh0Q6QSIoC: 'Business',        // live
-  // The Growth Circle 🚀
-  prod_TWPbyx7qGRLd6J: 'The Growth Circle 🚀'  // live
+  prod_U4tCikdA2Kr75c: 'Maker',
+  prod_TnLttAZD9UmMxf: 'Hobby',
+  prod_Qitrfh0Q6QSIoC: 'Business',
+  prod_TWPbyx7qGRLd6J: 'The Growth Circle 🚀'
 };
 
 // Stripe sends signed webhooks; we must verify signature using raw body.
