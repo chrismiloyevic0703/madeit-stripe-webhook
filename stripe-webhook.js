@@ -36,6 +36,20 @@ function previousProductIdFromEvent(previousAttributes) {
   return null;
 }
 
+/**
+ * Prefer a subscription line whose product is in PLAN_MAP (membership line),
+ * not necessarily items.data[0] (Stripe order can vary).
+ */
+function primaryMembershipProductId(subscription) {
+  const items = subscription?.items?.data;
+  if (!items?.length) return null;
+  for (const item of items) {
+    const pid = productIdFromSubscriptionItem(item);
+    if (pid && PLAN_MAP[pid]) return pid;
+  }
+  return productIdFromSubscriptionItem(items[0]);
+}
+
 // Stripe sends signed webhooks; we must verify signature using raw body.
 router.post(
   '/stripe',
@@ -71,8 +85,7 @@ router.post(
       switch (event.type) {
         case 'customer.subscription.created': {
           const subscription = event.data.object;
-          const firstItem = subscription.items.data[0];
-          const productId = productIdFromSubscriptionItem(firstItem);
+          const productId = primaryMembershipProductId(subscription);
           const planName = PLAN_MAP[productId] || 'Unknown';
           const customerId = subscription.customer;
 
@@ -107,8 +120,7 @@ router.post(
           const subscription = event.data.object;
           const previousAttributes = event.data.previous_attributes;
 
-          const firstItem = subscription.items.data[0];
-          const productId = productIdFromSubscriptionItem(firstItem);
+          const productId = primaryMembershipProductId(subscription);
           const planName = PLAN_MAP[productId] || 'Unknown';
 
           const prevProductId = previousProductIdFromEvent(previousAttributes);
@@ -148,8 +160,7 @@ router.post(
         case 'customer.subscription.deleted': {
           const subscription = event.data.object;
           const customerId = subscription.customer;
-          const firstItem = subscription.items.data[0];
-          const prevProductId = productIdFromSubscriptionItem(firstItem);
+          const prevProductId = primaryMembershipProductId(subscription);
           const previousPlanName = prevProductId
             ? PLAN_MAP[prevProductId] || 'Unknown'
             : 'None';
@@ -193,6 +204,54 @@ router.post(
   }
 );
 
+function klaviyoApiHeaders(apiKey) {
+  const revision = process.env.KLAVIYO_API_REVISION || '2025-01-15';
+  return {
+    Authorization: `Klaviyo-API-Key ${apiKey}`,
+    'Content-Type': 'application/vnd.api+json',
+    Accept: 'application/vnd.api+json',
+    revision
+  };
+}
+
+/** Resolve Klaviyo profile id by email (JSON:API filter). */
+async function getKlaviyoProfileIdByEmail(email, headers) {
+  try {
+    const filter = encodeURIComponent(`equals(email,"${email}")`);
+    const { data } = await axios.get(
+      `https://a.klaviyo.com/api/profiles/?filter=${filter}`,
+      { headers }
+    );
+    const row = data?.data?.[0];
+    return row?.id ?? null;
+  } catch (err) {
+    console.error(
+      'Klaviyo get profile by email failed:',
+      err.response?.status,
+      err.response?.data ? JSON.stringify(err.response.data) : err.message
+    );
+    return null;
+  }
+}
+
+/** Fetch existing profile attributes so PATCH does not wipe other custom properties. */
+async function fetchKlaviyoProfileAttributes(profileId, headers) {
+  try {
+    const { data } = await axios.get(
+      `https://a.klaviyo.com/api/profiles/${profileId}/`,
+      { headers }
+    );
+    return data?.data?.attributes ?? {};
+  } catch (err) {
+    console.error(
+      'Klaviyo get profile failed:',
+      err.response?.status,
+      err.response?.data ? JSON.stringify(err.response.data) : err.message
+    );
+    return {};
+  }
+}
+
 async function updateKlaviyoProfile({
   email,
   membershipPlan,
@@ -207,6 +266,8 @@ async function updateKlaviyoProfile({
     return;
   }
 
+  const headers = klaviyoApiHeaders(KLAVIYO_API_KEY);
+
   const properties = {
     membership_plan: membershipPlan,
     stripe_customer_id: stripeCustomerId,
@@ -218,37 +279,64 @@ async function updateKlaviyoProfile({
   }
 
   try {
-    const response = await axios.post(
-      'https://a.klaviyo.com/api/profile-import',
+    let profileId = await getKlaviyoProfileIdByEmail(email, headers);
+
+    if (!profileId) {
+      const importRes = await axios.post(
+        'https://a.klaviyo.com/api/profile-import/',
+        {
+          data: {
+            type: 'profile',
+            attributes: {
+              email,
+              properties
+            }
+          }
+        },
+        { headers }
+      );
+      profileId = importRes.data?.data?.id ?? null;
+      console.log(
+        'Klaviyo profile-import:',
+        importRes.status,
+        profileId ? `id=${profileId}` : '(no id in response)'
+      );
+    }
+
+    if (!profileId) {
+      console.error('Klaviyo: could not resolve profile id for', email);
+      return;
+    }
+
+    const existingAttrs = await fetchKlaviyoProfileAttributes(
+      profileId,
+      headers
+    );
+    const mergedProperties = {
+      ...(existingAttrs.properties || {}),
+      ...properties
+    };
+
+    const patchRes = await axios.patch(
+      `https://a.klaviyo.com/api/profiles/${profileId}/`,
       {
         data: {
           type: 'profile',
+          id: profileId,
           attributes: {
-            email,
-            properties
+            properties: mergedProperties
           }
         }
       },
-      {
-        headers: {
-          Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          revision: '2024-02-15'
-        }
-      }
+      { headers }
     );
 
-    console.log(
-      'Klaviyo profile import response:',
-      response.status,
-      response.statusText
-    );
+    console.log('Klaviyo profile PATCH:', patchRes.status, patchRes.statusText);
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
     console.error(
-      'Klaviyo profile import failed:',
+      'Klaviyo profile update failed:',
       status,
       body ? JSON.stringify(body) : err.message
     );
