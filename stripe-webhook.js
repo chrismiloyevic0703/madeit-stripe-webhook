@@ -23,14 +23,31 @@ const PLAN_MAP = {
 };
 
 /** Stripe may send price.product as an ID string or as an expanded object. */
-function productIdFromSubscription(subscription) {
-  const firstItem = subscription.items?.data?.[0];
-  const price = firstItem?.price;
-  if (!price) return null;
+function productIdFromPrice(price) {
+  if (!price || typeof price === 'string') return null;
   const p = price.product;
   if (typeof p === 'string') return p;
   if (p && typeof p === 'object' && typeof p.id === 'string') return p.id;
   return null;
+}
+
+/** Reads prod_ id from subscription.items (or previous_attributes.items). */
+function productIdFromItems(items) {
+  const firstItem = items?.data?.[0];
+  return productIdFromPrice(firstItem?.price);
+}
+
+function productIdFromSubscription(subscription) {
+  return productIdFromItems(subscription.items);
+}
+
+/**
+ * On subscription.updated, Stripe includes previous_attributes with old values
+ * for fields that changed. When the plan changes, items reflects the prior line items.
+ */
+function productIdFromPreviousAttributes(previousAttributes) {
+  if (!previousAttributes?.items) return null;
+  return productIdFromItems(previousAttributes.items);
 }
 
 // Stripe sends signed webhooks; we must verify signature using raw body.
@@ -66,8 +83,7 @@ router.post(
 
     try {
       switch (event.type) {
-        case 'customer.subscription.created':
-        case 'customer.subscription.updated': {
+        case 'customer.subscription.created': {
           const subscription = event.data.object;
 
           const productId = productIdFromSubscription(subscription);
@@ -110,6 +126,81 @@ router.post(
               await updateKlaviyoProfile({
                 email,
                 membershipPlan: planName,
+                previousMembershipPlan: 'None',
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: subscription.id
+              });
+            } catch (err) {
+              console.error('Failed to update Klaviyo profile:', err.message || err);
+              // Do not fail the webhook; Stripe just needs a 2xx.
+            }
+          } catch (err) {
+            console.error('Failed to retrieve Stripe customer:', err.message || err);
+          }
+
+          break;
+        }
+
+        case 'customer.subscription.updated': {
+          const subscription = event.data.object;
+
+          const productId = productIdFromSubscription(subscription);
+          const planName = (productId && PLAN_MAP[productId]) || 'Unknown';
+          if (!productId) {
+            console.warn(
+              'Stripe subscription has no price.product on first item; event',
+              event.id,
+              'subscription',
+              subscription.id
+            );
+          } else if (planName === 'Unknown') {
+            console.warn(
+              'No PLAN_MAP entry for product',
+              productId,
+              '— add this prod_ id for correct Klaviyo membership_plan'
+            );
+          }
+
+          const prevProductId = productIdFromPreviousAttributes(
+            event.data.previous_attributes
+          );
+          let previousMembershipPlan;
+          if (prevProductId) {
+            previousMembershipPlan = PLAN_MAP[prevProductId] || 'Unknown';
+            if (previousMembershipPlan === 'Unknown') {
+              console.warn(
+                'No PLAN_MAP entry for previous product',
+                prevProductId,
+                '— add this prod_ id for correct Klaviyo previous_membership_plan'
+              );
+            }
+          }
+          // If items did not change, omit previous_membership_plan so Klaviyo keeps the last value.
+
+          const customerId =
+            typeof subscription.customer === 'string'
+              ? subscription.customer
+              : subscription.customer?.id;
+
+          if (!customerId) {
+            console.warn('No Stripe customer id on subscription', subscription.id);
+            break;
+          }
+
+          try {
+            const customer = await stripe.customers.retrieve(customerId);
+            const email = customer.email;
+
+            if (!email) {
+              console.warn('No email found for Stripe customer', customerId);
+              break;
+            }
+
+            try {
+              await updateKlaviyoProfile({
+                email,
+                membershipPlan: planName,
+                previousMembershipPlan,
                 stripeCustomerId: customerId,
                 stripeSubscriptionId: subscription.id
               });
@@ -146,9 +237,15 @@ router.post(
             }
 
             try {
+              const lastProductId = productIdFromSubscription(subscription);
+              const previousMembershipPlan = lastProductId
+                ? PLAN_MAP[lastProductId] || 'Unknown'
+                : 'None';
+
               await updateKlaviyoProfile({
                 email,
                 membershipPlan: 'None',
+                previousMembershipPlan,
                 stripeCustomerId: customerId,
                 stripeSubscriptionId: subscription.id
               });
@@ -178,6 +275,7 @@ router.post(
 async function updateKlaviyoProfile({
   email,
   membershipPlan,
+  previousMembershipPlan,
   stripeCustomerId,
   stripeSubscriptionId
 }) {
@@ -188,6 +286,15 @@ async function updateKlaviyoProfile({
     return;
   }
 
+  const properties = {
+    membership_plan: membershipPlan,
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: stripeSubscriptionId
+  };
+  if (previousMembershipPlan !== undefined) {
+    properties.previous_membership_plan = previousMembershipPlan;
+  }
+
   try {
     const response = await axios.post(
       'https://a.klaviyo.com/api/profile-import',
@@ -196,11 +303,7 @@ async function updateKlaviyoProfile({
           type: 'profile',
           attributes: {
             email,
-            properties: {
-              membership_plan: membershipPlan,
-              stripe_customer_id: stripeCustomerId,
-              stripe_subscription_id: stripeSubscriptionId
-            }
+            properties
           }
         }
       },
@@ -216,7 +319,10 @@ async function updateKlaviyoProfile({
 
     console.log('Klaviyo profile import ok:', response.status, {
       email,
-      membership_plan: membershipPlan
+      membership_plan: membershipPlan,
+      ...(previousMembershipPlan !== undefined && {
+        previous_membership_plan: previousMembershipPlan
+      })
     });
   } catch (err) {
     const status = err.response?.status;
