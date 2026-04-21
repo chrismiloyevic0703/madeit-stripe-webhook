@@ -22,6 +22,17 @@ const PLAN_MAP = {
   prod_Qitrfh0Q6QSIoC: 'Business'
 };
 
+/** Stripe may send price.product as an ID string or as an expanded object. */
+function productIdFromSubscription(subscription) {
+  const firstItem = subscription.items?.data?.[0];
+  const price = firstItem?.price;
+  if (!price) return null;
+  const p = price.product;
+  if (typeof p === 'string') return p;
+  if (p && typeof p === 'object' && typeof p.id === 'string') return p.id;
+  return null;
+}
+
 // Stripe sends signed webhooks; we must verify signature using raw body.
 router.post(
   '/stripe',
@@ -59,11 +70,32 @@ router.post(
         case 'customer.subscription.updated': {
           const subscription = event.data.object;
 
-          const firstItem = subscription.items.data[0];
-          const productId = firstItem?.price?.product;
-          const planName = PLAN_MAP[productId] || 'Unknown';
+          const productId = productIdFromSubscription(subscription);
+          const planName = (productId && PLAN_MAP[productId]) || 'Unknown';
+          if (!productId) {
+            console.warn(
+              'Stripe subscription has no price.product on first item; event',
+              event.id,
+              'subscription',
+              subscription.id
+            );
+          } else if (planName === 'Unknown') {
+            console.warn(
+              'No PLAN_MAP entry for product',
+              productId,
+              '— add this prod_ id for correct Klaviyo membership_plan'
+            );
+          }
 
-          const customerId = subscription.customer;
+          const customerId =
+            typeof subscription.customer === 'string'
+              ? subscription.customer
+              : subscription.customer?.id;
+
+          if (!customerId) {
+            console.warn('No Stripe customer id on subscription', subscription.id);
+            break;
+          }
 
           try {
             const customer = await stripe.customers.retrieve(customerId);
@@ -94,7 +126,15 @@ router.post(
 
         case 'customer.subscription.deleted': {
           const subscription = event.data.object;
-          const customerId = subscription.customer;
+          const customerId =
+            typeof subscription.customer === 'string'
+              ? subscription.customer
+              : subscription.customer?.id;
+
+          if (!customerId) {
+            console.warn('No Stripe customer id on subscription (delete)', subscription.id);
+            break;
+          }
 
           try {
             const customer = await stripe.customers.retrieve(customerId);
@@ -167,18 +207,17 @@ async function updateKlaviyoProfile({
       {
         headers: {
           Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
+          'Content-Type': 'application/vnd.api+json',
+          Accept: 'application/vnd.api+json',
           revision: '2024-02-15'
         }
       }
     );
 
-    console.log(
-      'Klaviyo profile import response:',
-      response.status,
-      response.statusText
-    );
+    console.log('Klaviyo profile import ok:', response.status, {
+      email,
+      membership_plan: membershipPlan
+    });
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
