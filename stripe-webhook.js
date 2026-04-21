@@ -9,12 +9,17 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 // Stripe product ID → plan name (must match Klaviyo segment values).
-// Add test product IDs (prod_...) here when testing in Stripe test mode.
+// Test and live Dashboards use different prod_ IDs; list both so webhooks work
+// with sk_test_... + test webhook secret or sk_live_... + live secret.
 const PLAN_MAP = {
   prod_U4tCikdA2Kr75c: 'Maker',
+  prod_TWPbyx7qGRLd6J: 'The Growth Circle 🚀',
+
+  prod_MfxwKxisQiI5pQ: 'Hobby',
+  prod_RDrvOrlcGKv17S: 'Business',
+
   prod_TnLttAZD9UmMxf: 'Hobby',
-  prod_Qitrfh0Q6QSIoC: 'Business',
-  prod_TWPbyx7qGRLd6J: 'The Growth Circle 🚀'
+  prod_Qitrfh0Q6QSIoC: 'Business'
 };
 
 // Stripe sends signed webhooks; we must verify signature using raw body.
