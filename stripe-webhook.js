@@ -14,6 +14,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 const PLAN_MAP = {
   prod_U4tCikdA2Kr75c: 'Maker',
   prod_TWPbyx7qGRLd6J: 'The Growth Circle 🚀',
+  prod_QitoWsRWrfLg0e: 'Starter',
 
   prod_MfxwKxisQiI5pQ: 'Hobby',
   prod_RDrvOrlcGKv17S: 'Business',
