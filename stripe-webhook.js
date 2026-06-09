@@ -128,9 +128,7 @@ router.post(
               await updateKlaviyoProfile({
                 email,
                 membershipPlan: planName,
-                previousMembershipPlan: 'None',
-                stripeCustomerId: customerId,
-                stripeSubscriptionId: subscription.id
+                previousMembershipPlan: 'None'
               });
             } catch (err) {
               console.error('Failed to update Klaviyo profile:', err.message || err);
@@ -202,9 +200,7 @@ router.post(
               await updateKlaviyoProfile({
                 email,
                 membershipPlan: planName,
-                previousMembershipPlan,
-                stripeCustomerId: customerId,
-                stripeSubscriptionId: subscription.id
+                previousMembershipPlan
               });
             } catch (err) {
               console.error('Failed to update Klaviyo profile:', err.message || err);
@@ -247,9 +243,7 @@ router.post(
               await updateKlaviyoProfile({
                 email,
                 membershipPlan: 'None',
-                previousMembershipPlan,
-                stripeCustomerId: customerId,
-                stripeSubscriptionId: subscription.id
+                previousMembershipPlan
               });
             } catch (err) {
               console.error('Failed to update Klaviyo profile (delete):', err.message || err);
@@ -277,9 +271,7 @@ router.post(
 async function updateKlaviyoProfile({
   email,
   membershipPlan,
-  previousMembershipPlan,
-  stripeCustomerId,
-  stripeSubscriptionId
+  previousMembershipPlan
 }) {
   const KLAVIYO_API_KEY = process.env.KLAVIYO_API_KEY;
 
@@ -289,9 +281,7 @@ async function updateKlaviyoProfile({
   }
 
   const properties = {
-    membership_plan: membershipPlan,
-    stripe_customer_id: stripeCustomerId,
-    stripe_subscription_id: stripeSubscriptionId
+    membership_plan: membershipPlan
   };
   if (previousMembershipPlan !== undefined) {
     properties.previous_membership_plan = previousMembershipPlan;
