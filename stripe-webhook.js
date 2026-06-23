@@ -52,6 +52,13 @@ function productIdFromPreviousAttributes(previousAttributes) {
   return productIdFromItems(previousAttributes.items);
 }
 
+// Never store Stripe payment/identity data in Klaviyo; purge if another integration set them.
+const STRIPE_PROPERTIES_TO_PURGE = [
+  'Stripe Card Expiration Date',
+  'stripe_customer_id',
+  'stripe_subscription_id'
+];
+
 // Stripe sends signed webhooks; we must verify signature using raw body.
 router.post(
   '/stripe',
@@ -287,6 +294,13 @@ async function updateKlaviyoProfile({
     properties.previous_membership_plan = previousMembershipPlan;
   }
 
+  const klaviyoHeaders = {
+    Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
+    'Content-Type': 'application/vnd.api+json',
+    Accept: 'application/vnd.api+json',
+    revision: '2024-02-15'
+  };
+
   try {
     const response = await axios.post(
       'https://a.klaviyo.com/api/profile-import',
@@ -299,19 +313,39 @@ async function updateKlaviyoProfile({
           }
         }
       },
-      {
-        headers: {
-          Authorization: `Klaviyo-API-Key ${KLAVIYO_API_KEY}`,
-          'Content-Type': 'application/vnd.api+json',
-          Accept: 'application/vnd.api+json',
-          revision: '2024-02-15'
-        }
-      }
+      { headers: klaviyoHeaders }
     );
+
+    for (const propertyKey of STRIPE_PROPERTIES_TO_PURGE) {
+      try {
+        await axios.post(
+          'https://a.klaviyo.com/api/profile-import',
+          {
+            data: {
+              type: 'profile',
+              attributes: { email },
+              meta: {
+                patch_properties: {
+                  unset: propertyKey
+                }
+              }
+            }
+          },
+          { headers: klaviyoHeaders }
+        );
+      } catch (unsetErr) {
+        console.warn(
+          'Klaviyo unset stripe property failed:',
+          propertyKey,
+          unsetErr.response?.status || unsetErr.message
+        );
+      }
+    }
 
     console.log('Klaviyo profile import ok:', response.status, {
       email,
       membership_plan: membershipPlan,
+      purged_stripe_properties: STRIPE_PROPERTIES_TO_PURGE,
       ...(previousMembershipPlan !== undefined && {
         previous_membership_plan: previousMembershipPlan
       })
